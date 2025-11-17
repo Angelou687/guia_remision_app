@@ -1,61 +1,95 @@
 <?php
-require_once "conexion.php";
-$mensaje = "";
+require_once 'conexion.php';
 
-$ruc = $_GET['ruc'];
+$ruc = $_GET['ruc'] ?? null;
+if (!$ruc) {
+    die("RUC no especificado");
+}
 
-$stmt = $pdo->query("SELECT * FROM destinatario WHERE ruc='$ruc'");
-$data = $stmt->fetch(PDO::FETCH_ASSOC);
+$errores = [];
 
-if ($_POST) {
-    $pdo->prepare("CALL sp_editar_destinatario(?,?,?,?,?,?)")
-        ->execute([
-            $ruc,
-            $_POST['nombre'],
-            $_POST['telefono'],
-            $_POST['direccion'],
-            $_POST['ubigeo'],
-            $_POST['gmail']
-        ]);
+try {
+    $stmt = $pdo->prepare("SELECT * FROM destinatario WHERE ruc = ?");
+    $stmt->execute([$ruc]);
+    $destinatario = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $mensaje = "Datos actualizados correctamente";
+    if (!$destinatario) {
+        die("Destinatario no encontrado");
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $nombre        = $_POST['nombre'] ?? '';
+        $telefono      = $_POST['telefono'] ?? '';
+        $direccion     = $_POST['direccion'] ?? '';
+        $codigo_ubigeo = $_POST['codigo_ubigeo'] ?? '';
+        $gmail         = $_POST['gmail'] ?? '';
+
+        $stmt2 = $pdo->prepare("CALL sp_actualizar_destinatario(?,?,?,?,?,?)");
+        $stmt2->execute([$ruc, $nombre, $telefono, $direccion, $codigo_ubigeo, $gmail]);
+        $stmt2->closeCursor();
+
+        header('Location: listar_destinatarios.php');
+        exit;
+    }
+} catch (PDOException $e) {
+    $errores[] = $e->getMessage();
 }
 ?>
-
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Editar Destinatario</title>
-    <link rel="stylesheet" href="estilos.css">
+    <title>Editar destinatario</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#f4f6f9; margin:30px; }
+        form { background:#fff; padding:20px; border-radius:8px; max-width:450px; }
+        label { display:block; margin-top:10px; }
+        input { width:100%; padding:6px; margin-top:4px; box-sizing:border-box; }
+        button, a.btn { margin-top:15px; padding:8px 12px; border:none; border-radius:4px; text-decoration:none; }
+        button { background:#3498db; color:#fff; }
+        a.btn { background:#7f8c8d; color:#fff; }
+        .error { color:#e74c3c; }
+    </style>
 </head>
-
 <body>
-<div class="container">
-    <h2>Editar Destinatario</h2>
+<h1>Editar destinatario</h1>
+<a href="listar_destinatarios.php" class="btn">← Volver</a>
 
-    <?php if ($mensaje): ?><p><strong><?= $mensaje ?></strong></p><?php endif; ?>
+<?php if ($errores): ?>
+    <div class="error">
+        <?php foreach ($errores as $err) echo "<p>Error: ".htmlspecialchars($err)."</p>"; ?>
+    </div>
+<?php endif; ?>
 
-    <form method="POST">
-        <label>Nombre:</label>
-        <input type="text" name="nombre" value="<?= $data['nombre'] ?>">
+<form method="post">
+    <p><strong>RUC:</strong> <?= htmlspecialchars($destinatario['ruc']) ?></p>
 
-        <label>Teléfono:</label>
-        <input type="text" name="telefono" value="<?= $data['numero_telefono'] ?>">
+    <label>Nombre / Razón social:
+        <input type="text" name="nombre" required
+               value="<?= htmlspecialchars($destinatario['nombre']) ?>">
+    </label>
 
-        <label>Dirección:</label>
-        <input type="text" name="direccion" value="<?= $data['calle_direccion'] ?>">
+    <label>Teléfono:
+        <input type="text" name="telefono" pattern="\d*"
+               value="<?= htmlspecialchars($destinatario['numero_telefono']) ?>">
+    </label>
 
-        <label>Ubigeo:</label>
-        <input type="text" name="ubigeo" value="<?= $data['codigo_ubigeo'] ?>">
+    <label>Dirección:
+        <input type="text" name="direccion" required
+               value="<?= htmlspecialchars($destinatario['calle_direccion']) ?>">
+    </label>
 
-        <label>Correo:</label>
-        <input type="text" name="gmail" value="<?= $data['gmail'] ?>">
+    <label>Código Ubigeo:
+        <input type="text" name="codigo_ubigeo" required pattern="\d{6}" maxlength="6"
+               value="<?= htmlspecialchars($destinatario['codigo_ubigeo']) ?>">
+    </label>
 
-        <input type="submit" value="Guardar cambios">
-    </form>
+    <label>Correo electrónico:
+        <input type="email" name="gmail"
+               value="<?= htmlspecialchars($destinatario['gmail']) ?>">
+    </label>
 
-    <p><a href="listar_destinatarios.php">Volver</a></p>
-</div>
+    <button type="submit">Actualizar</button>
+</form>
 </body>
 </html>
