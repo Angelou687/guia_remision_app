@@ -12,6 +12,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.function.BiConsumer; // <--
 
 public class MainApp extends JFrame {
 
@@ -143,6 +144,12 @@ public class MainApp extends JFrame {
                 return;
             }
 
+            // Validar existencia de ubigeo antes de intentar insertar
+            if (!destinatarioDAO.ubigeoExiste(ubigeo)) {
+                JOptionPane.showMessageDialog(panel, "El código de ubigeo '" + ubigeo + "' no existe en la tabla ubigeo. Cree el ubigeo antes de continuar.");
+                return;
+            }
+
             Destinatario d = new Destinatario(ruc, nombre, tel, dir, ubigeo, gmail);
             if (destinatarioDAO.insertar(d)) {
                 JOptionPane.showMessageDialog(panel, "Destinatario insertado correctamente");
@@ -165,6 +172,12 @@ public class MainApp extends JFrame {
             String dir    = txtDir.getText().trim();
             String ubigeo = txtUbigeo.getText().trim();
             String gmail  = txtGmail.getText().trim();
+
+            // Validar ubigeo antes de actualizar (si se proporciona)
+            if (!ubigeo.isEmpty() && !destinatarioDAO.ubigeoExiste(ubigeo)) {
+                JOptionPane.showMessageDialog(panel, "El código de ubigeo '" + ubigeo + "' no existe en la tabla ubigeo. Cree el ubigeo antes de continuar.");
+                return;
+            }
 
             Destinatario d = new Destinatario(ruc, nombre, tel, dir, ubigeo, gmail);
             if (destinatarioDAO.actualizar(d)) {
@@ -241,6 +254,7 @@ public class MainApp extends JFrame {
         JComboBox<CabeceraGuia> cbGuias = new JComboBox<>();
 
         JButton btnRefrescar = new JButton("Refrescar");
+        JButton btnEmitirGuia = new JButton("Emitir guía");
         JLabel lblEstado = new JLabel("Nuevo estado:");
         String[] estados = {"emitida", "en tránsito", "entregada"};
         JComboBox<String> cbEstado = new JComboBox<>(estados);
@@ -249,6 +263,7 @@ public class MainApp extends JFrame {
         top.add(lblGuia);
         top.add(cbGuias);
         top.add(btnRefrescar);
+        top.add(btnEmitirGuia);
         top.add(lblEstado);
         top.add(cbEstado);
         top.add(btnActualizar);
@@ -281,6 +296,10 @@ public class MainApp extends JFrame {
                 JOptionPane.showMessageDialog(panel, "Error al actualizar estado");
             }
         });
+
+        btnEmitirGuia.addActionListener(e -> {
+            mostrarEmitirGuiaDialog(cbGuias, model);
+         });
 
         return panel;
     }
@@ -451,101 +470,46 @@ public class MainApp extends JFrame {
             DefaultTableModel tm;
 
             switch (idx) {
-                case 0: // Detalle de orden, requiere codigo_orden
+                case 0: // Detalle de orden -> SP con parámetro
                     String codOrden = txtParametro.getText().trim();
                     if (codOrden.isEmpty()) {
                         JOptionPane.showMessageDialog(panel, "Ingrese código de orden, ej: ORD0001");
                         return;
                     }
-                    tm = reporteDAO.ejecutarConsultaConParametro(
-                            "SELECT o.codigo_orden, p.codigo_producto, p.nombre_producto, " +
-                                    "do.cantidad, do.precio_unitario, do.subtotal " +
-                                    "FROM orden_de_pago o " +
-                                    "JOIN detalle_orden do ON do.codigo_orden = o.codigo_orden " +
-                                    "JOIN producto p       ON p.codigo_producto = do.codigo_producto " +
-                                    "WHERE o.codigo_orden = ?",
-                            codOrden
-                    );
+                    tm = reporteDAO.ejecutarSPConParametro("sp_reporte_detalle_orden", codOrden);
                     break;
 
-                case 1: // Guías por fecha y estado
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT fecha_emision, estado_guia, COUNT(*) AS guias " +
-                            "FROM cabecera_guia " +
-                            "GROUP BY fecha_emision, estado_guia " +
-                            "ORDER BY fecha_emision DESC, estado_guia"
-                    );
+                case 1: // Guías por fecha y estado -> SP
+                    tm = reporteDAO.ejecutarSP("sp_reporte_guias_por_fecha_estado()");
                     break;
 
-                case 2: // Productos más vendidos
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT p.codigo_producto, p.nombre_producto, " +
-                            "SUM(do.cantidad) AS cantidad_vendida " +
-                            "FROM producto p " +
-                            "JOIN detalle_orden do ON do.codigo_producto = p.codigo_producto " +
-                            "GROUP BY p.codigo_producto, p.nombre_producto " +
-                            "ORDER BY cantidad_vendida DESC"
-                    );
+                case 2: // Productos más vendidos -> SP
+                    tm = reporteDAO.ejecutarSP("sp_reporte_productos_mas_vendidos()");
                     break;
 
-                case 3: // Utilización de vehículos
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT v.placa, v.marca, v.modelo, " +
-                            "COUNT(t.codigo_traslado) AS viajes " +
-                            "FROM vehiculo v " +
-                            "LEFT JOIN traslado t ON t.placa = v.placa " +
-                            "GROUP BY v.placa, v.marca, v.modelo " +
-                            "ORDER BY viajes DESC"
-                    );
+                case 3: // Utilización de vehículos -> SP
+                    tm = reporteDAO.ejecutarSP("sp_reporte_utilizacion_vehiculos()");
                     break;
 
-                case 4: // Licencias por vencer (N días)
+                case 4: // Licencias por vencer (N días) -> SP con parámetro
                     String dias = txtParametro.getText().trim();
                     if (dias.isEmpty()) dias = "180";
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT licencia, nombre, telefono, fecha_vencimiento_licencia " +
-                            "FROM conductor " +
-                            "WHERE fecha_vencimiento_licencia <= DATE_ADD(CURDATE(), INTERVAL " + dias + " DAY) " +
-                            "ORDER BY fecha_vencimiento_licencia"
-                    );
+                    tm = reporteDAO.ejecutarSPConParametro("sp_reporte_licencias_por_vencer", dias);
                     break;
 
-                case 5: // Guías sin traslado
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT cg.codigo_guia, cg.fecha_emision, cg.estado_guia " +
-                            "FROM cabecera_guia cg " +
-                            "LEFT JOIN traslado t ON t.codigo_guia = cg.codigo_guia " +
-                            "WHERE t.codigo_guia IS NULL " +
-                            "ORDER BY cg.fecha_emision DESC"
-                    );
+                case 5: // Guías sin traslado -> SP
+                    tm = reporteDAO.ejecutarSP("sp_reporte_guias_sin_traslado()");
                     break;
 
-                case 6: // Bultos por cliente 90d
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT d.nombre AS cliente, SUM(cg.numero_bultos) AS bultos_90d " +
-                            "FROM cuerpo_guia cg " +
-                            "JOIN destinatario d ON d.ruc = cg.ruc_destinatario " +
-                            "JOIN cabecera_guia cab ON cab.codigo_guia = cg.codigo_guia " +
-                            "WHERE cab.fecha_emision >= DATE_SUB(CURDATE(), INTERVAL 90 DAY) " +
-                            "GROUP BY d.nombre " +
-                            "ORDER BY bultos_90d DESC"
-                    );
+                case 6: // Bultos por cliente 90d -> SP
+                    tm = reporteDAO.ejecutarSP("sp_reporte_bultos_por_cliente_90d()");
                     break;
 
-                case 7: // KPI diario
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT cab.fecha_emision, " +
-                            "SUM(cab.estado_guia = 'emitida') AS emitidas, " +
-                            "SUM(t.estado_traslado = 'en tránsito') AS en_transito, " +
-                            "SUM(t.estado_traslado = 'entregado') AS entregadas " +
-                            "FROM cabecera_guia cab " +
-                            "LEFT JOIN traslado t ON t.codigo_guia = cab.codigo_guia " +
-                            "GROUP BY cab.fecha_emision " +
-                            "ORDER BY cab.fecha_emision DESC"
-                    );
+                case 7: // KPI diario -> SP
+                    tm = reporteDAO.ejecutarSP("sp_reporte_kpi_guias_diario()");
                     break;
 
-                case 8: // Clientes sin compras 60 días
+                case 8: // Clientes sin compras 60 días -> no hay SP específico en script, mantener SQL
                     tm = reporteDAO.ejecutarConsulta(
                             "SELECT d.ruc, d.nombre " +
                             "FROM destinatario d " +
@@ -558,13 +522,8 @@ public class MainApp extends JFrame {
                     );
                     break;
 
-                case 9: // Traslados con vehículo y guía
-                    tm = reporteDAO.ejecutarConsulta(
-                            "SELECT t.codigo_traslado, t.codigo_guia, v.placa, v.tipo_vehiculo, " +
-                            "t.fecha_inicio, t.fecha_fin, t.estado_traslado " +
-                            "FROM traslado t " +
-                            "JOIN vehiculo v ON v.placa = t.placa"
-                    );
+                case 9: // Traslados con vehículo y guía -> usar SP listados
+                    tm = reporteDAO.ejecutarSP("sp_listar_traslados()");
                     break;
 
                 default:
@@ -586,5 +545,131 @@ public class MainApp extends JFrame {
             MainApp app = new MainApp();
             app.setVisible(true);
         });
+    }
+
+    // Formulario modal para emitir guía
+    private void mostrarEmitirGuiaDialog(JComboBox<CabeceraGuia> cbGuias, DefaultTableModel model) {
+        JDialog dlg = new JDialog(this, "Emitir guía", true);
+        JPanel p = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4,4,4,4);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+
+        final int[] row = new int[]{0};
+         JTextField txtCodigo = new JTextField();
+        JTextField txtSerie = new JTextField();
+        JTextField txtNumero = new JTextField();
+        JTextField txtCodOrden = new JTextField();
+        JTextField txtRucRemitente = new JTextField();
+        JComboBox<String> cbDest = new JComboBox<>();
+        // cargar destinatarios (RUC - nombre)
+        List<Destinatario> dests = destinatarioDAO.listarTodos();
+        for (Destinatario d : dests) {
+            cbDest.addItem(d.getRuc() + " - " + d.getNombre());
+        }
+        JTextField txtDirPartida = new JTextField();
+        JTextField txtDirLlegada = new JTextField();
+        JTextField txtUbigeoOri = new JTextField();
+        JTextField txtUbigeoDest = new JTextField();
+        JTextField txtMotivo = new JTextField();
+        JTextField txtModalidad = new JTextField();
+        JTextField txtPeso = new JTextField("0.0");
+        JTextField txtBultos = new JTextField("0");
+
+        // helper to add label+component
+        BiConsumer<String, JComponent> addRow = (label, comp) -> {
+            gbc.gridx = 0; gbc.gridy = row[0]; gbc.weightx = 0.0;
+            p.add(new JLabel(label), gbc);
+            gbc.gridx = 1; gbc.gridy = row[0]; gbc.weightx = 1.0;
+            p.add(comp, gbc);
+            row[0]++;
+        };
+
+        addRow.accept("Código guía:", txtCodigo);
+        addRow.accept("Serie:", txtSerie);
+        addRow.accept("Número:", txtNumero);
+        addRow.accept("Código orden (opcional):", txtCodOrden);
+        addRow.accept("RUC remitente:", txtRucRemitente);
+        addRow.accept("Destinatario:", cbDest);
+        addRow.accept("Dirección partida:", txtDirPartida);
+        addRow.accept("Dirección llegada:", txtDirLlegada);
+        addRow.accept("Ubigeo origen:", txtUbigeoOri);
+        addRow.accept("Ubigeo destino:", txtUbigeoDest);
+        addRow.accept("Motivo traslado:", txtMotivo);
+        addRow.accept("Modalidad:", txtModalidad);
+        addRow.accept("Peso total:", txtPeso);
+        addRow.accept("Número bultos:", txtBultos);
+
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton btnEmitir = new JButton("Emitir");
+        JButton btnCancelar = new JButton("Cancelar");
+        btns.add(btnEmitir);
+        btns.add(btnCancelar);
+        gbc.gridx = 0; gbc.gridy = row[0]; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        p.add(btns, gbc);
+
+        dlg.getContentPane().add(new JScrollPane(p));
+        dlg.setSize(520, 520);
+        dlg.setLocationRelativeTo(this);
+
+        btnCancelar.addActionListener(a -> dlg.dispose());
+
+        btnEmitir.addActionListener(a -> {
+            try {
+                String codigo = txtCodigo.getText().trim();
+                String serie = txtSerie.getText().trim();
+                String numero = txtNumero.getText().trim();
+                String codOrden = txtCodOrden.getText().trim();
+                String rucRem = txtRucRemitente.getText().trim();
+                String destSel = (String) cbDest.getSelectedItem();
+                String rucDest = destSel != null ? destSel.split(" - ")[0].trim() : "";
+                String dirPartida = txtDirPartida.getText().trim();
+                String dirLlegada = txtDirLlegada.getText().trim();
+                String ubOri = txtUbigeoOri.getText().trim();
+                String ubDest = txtUbigeoDest.getText().trim();
+                String motivo = txtMotivo.getText().trim();
+                String modalidad = txtModalidad.getText().trim();
+                double peso = txtPeso.getText().trim().isEmpty() ? 0.0 : Double.parseDouble(txtPeso.getText().trim());
+                int bultos = txtBultos.getText().trim().isEmpty() ? 0 : Integer.parseInt(txtBultos.getText().trim());
+
+                if (codigo.isEmpty() || serie.isEmpty() || numero.isEmpty() || rucRem.isEmpty() ||
+                        rucDest.isEmpty() || dirPartida.isEmpty() || dirLlegada.isEmpty()) {
+                    JOptionPane.showMessageDialog(dlg, "Complete los campos obligatorios.");
+                    return;
+                }
+                // opcional: validar ubigeos existan
+                DestinatarioDAO daoD = destinatarioDAO;
+                if (!ubOri.isEmpty() && !daoD.ubigeoExiste(ubOri)) {
+                    JOptionPane.showMessageDialog(dlg, "Ubigeo origen no existe: " + ubOri);
+                    return;
+                }
+                if (!ubDest.isEmpty() && !daoD.ubigeoExiste(ubDest)) {
+                    JOptionPane.showMessageDialog(dlg, "Ubigeo destino no existe: " + ubDest);
+                    return;
+                }
+
+                boolean ok = guiaDAO.emitirGuia(
+                        codigo, serie, numero,
+                        codOrden.isEmpty() ? null : codOrden,
+                        rucRem, rucDest,
+                        dirPartida, dirLlegada,
+                        ubOri, ubDest,
+                        motivo, modalidad,
+                        peso, bultos
+                );
+                if (ok) {
+                    JOptionPane.showMessageDialog(dlg, "Guía emitida correctamente");
+                    dlg.dispose();
+                    cargarGuias(cbGuias, model);
+                } else {
+                    JOptionPane.showMessageDialog(dlg, "Error al emitir guía");
+                }
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(dlg, "Peso o número de bultos con formato incorrecto");
+            }
+        });
+
+        dlg.setVisible(true);
     }
 }

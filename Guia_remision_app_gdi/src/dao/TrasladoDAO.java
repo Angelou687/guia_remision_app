@@ -10,38 +10,37 @@ import java.util.List;
 public class TrasladoDAO {
 
     public boolean registrarTraslado(Traslado t) {
-        String sql = "INSERT INTO traslado " +
-                "(codigo_traslado, codigo_guia, placa, licencia, fecha_inicio, fecha_fin, estado_traslado, observaciones) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-
+        // Llamar al procedimiento que inserta el traslado (disparará trg_traslado_ai)
+        String call = "{ CALL sp_registrar_traslado(?, ?, ?, ?, ?, ?, ?, ?) }";
         try (Connection cn = Conexion.getConnection();
-             PreparedStatement ps = cn.prepareStatement(sql)) {
+             CallableStatement cs = cn.prepareCall(call)) {
 
-            ps.setString(1, t.getCodigoTraslado());
-            ps.setString(2, t.getCodigoGuia());
-            ps.setString(3, t.getPlaca());
-            ps.setString(4, t.getLicencia());
-            ps.setTimestamp(5, t.getFechaInicio());
-            ps.setTimestamp(6, t.getFechaFin());
-            ps.setString(7, t.getEstadoTraslado());
-            ps.setString(8, t.getObservaciones());
+            cs.setString(1, t.getCodigoTraslado());
+            cs.setString(2, t.getCodigoGuia());
+            cs.setString(3, t.getPlaca());
+            cs.setString(4, t.getLicencia());
+            cs.setTimestamp(5, t.getFechaInicio());
+            cs.setTimestamp(6, t.getFechaFin());
+            cs.setString(7, t.getEstadoTraslado());
+            cs.setString(8, t.getObservaciones());
 
-            return ps.executeUpdate() > 0;
+            int updated = cs.executeUpdate();
+            return updated >= 0;
 
         } catch (SQLException e) {
-            System.out.println("Error al registrar traslado: " + e.getMessage());
+            System.out.println("Error al registrar traslado (CALL): " + e.getMessage());
             return false;
         }
     }
 
+    // listar usando SP sp_listar_traslados()
     public List<Traslado> listarTodos() {
         List<Traslado> lista = new ArrayList<>();
-        String sql = "SELECT codigo_traslado, codigo_guia, placa, licencia, fecha_inicio, " +
-                     "fecha_fin, estado_traslado, observaciones FROM traslado";
+        String call = "{ CALL sp_listar_traslados() }";
 
         try (Connection cn = Conexion.getConnection();
-             PreparedStatement ps = cn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+             CallableStatement cs = cn.prepareCall(call);
+             ResultSet rs = cs.executeQuery()) {
 
             while (rs.next()) {
                 Traslado t = new Traslado();
@@ -57,7 +56,7 @@ public class TrasladoDAO {
             }
 
         } catch (SQLException e) {
-            System.out.println("Error al listar traslados: " + e.getMessage());
+            System.out.println("Error al listar traslados (CALL): " + e.getMessage());
         }
 
         return lista;

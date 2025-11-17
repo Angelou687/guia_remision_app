@@ -9,13 +9,14 @@ import java.util.List;
 
 public class DestinatarioDAO {
 
+    // listar usando SP
     public List<Destinatario> listarTodos() {
         List<Destinatario> lista = new ArrayList<>();
-        String sql = "SELECT ruc, nombre, numero_telefono, calle_direccion, codigo_ubigeo, gmail FROM destinatario";
+        String call = "{ CALL sp_listar_destinatarios() }";
 
         try (Connection cn = Conexion.getConnection();
-             PreparedStatement ps = cn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+             CallableStatement cs = cn.prepareCall(call);
+             ResultSet rs = cs.executeQuery()) {
 
             while (rs.next()) {
                 Destinatario d = new Destinatario();
@@ -29,67 +30,102 @@ public class DestinatarioDAO {
             }
 
         } catch (SQLException e) {
-            System.out.println("Error al listar destinatarios: " + e.getMessage());
+            System.out.println("Error al listar destinatarios (CALL): " + e.getMessage());
         }
 
         return lista;
     }
 
+    // insertar ya usa CALL (mantener)
     public boolean insertar(Destinatario d) {
-        String sql = "INSERT INTO destinatario (ruc, nombre, numero_telefono, calle_direccion, codigo_ubigeo, gmail) " +
-                     "VALUES (?, ?, ?, ?, ?, ?)";
-
+        // Usar el procedimiento almacenado que realiza el INSERT.
+        String call = "{ CALL sp_insertar_destinatario(?, ?, ?, ?, ?, ?) }";
         try (Connection cn = Conexion.getConnection();
-             PreparedStatement ps = cn.prepareStatement(sql)) {
+             CallableStatement cs = cn.prepareCall(call)) {
 
-            ps.setString(1, d.getRuc());
-            ps.setString(2, d.getNombre());
-            ps.setString(3, d.getNumeroTelefono());
-            ps.setString(4, d.getCalleDireccion());
-            ps.setString(5, d.getCodigoUbigeo());
-            ps.setString(6, d.getGmail());
+            cs.setString(1, d.getRuc());
+            cs.setString(2, d.getNombre());
+            cs.setString(3, d.getNumeroTelefono());
+            cs.setString(4, d.getCalleDireccion());
+            cs.setString(5, d.getCodigoUbigeo());
+            cs.setString(6, d.getGmail());
 
-            return ps.executeUpdate() > 0;
+            int updated = cs.executeUpdate(); // el SP hace el INSERT -> disparará triggers relacionados
+            return updated >= 0; // puede ser 0 o 1 según servidor; si no lanza excepción, considerar OK
 
         } catch (SQLException e) {
-            System.out.println("Error al insertar destinatario: " + e.getMessage());
+            System.out.println("Error al insertar destinatario (CALL): " + e.getMessage());
             return false;
         }
     }
 
+    // actualizar usando SP
     public boolean actualizar(Destinatario d) {
-        String sql = "UPDATE destinatario SET nombre = ?, numero_telefono = ?, " +
-                     "calle_direccion = ?, codigo_ubigeo = ?, gmail = ? WHERE ruc = ?";
+        String call = "{ CALL sp_actualizar_destinatario(?, ?, ?, ?, ?, ?) }";
 
         try (Connection cn = Conexion.getConnection();
-             PreparedStatement ps = cn.prepareStatement(sql)) {
+             CallableStatement cs = cn.prepareCall(call)) {
 
-            ps.setString(1, d.getNombre());
-            ps.setString(2, d.getNumeroTelefono());
-            ps.setString(3, d.getCalleDireccion());
-            ps.setString(4, d.getCodigoUbigeo());
-            ps.setString(5, d.getGmail());
-            ps.setString(6, d.getRuc());
+            // Validar ubigeo (sigue siendo buena práctica)
+            String codigoUbigeo = d.getCodigoUbigeo();
+            if (codigoUbigeo != null && !codigoUbigeo.trim().isEmpty()) {
+                if (!ubigeoExiste(cn, codigoUbigeo)) {
+                    System.out.println("Error al actualizar destinatario: el codigo_ubigeo '" + codigoUbigeo + "' no existe en la tabla ubigeo.");
+                    return false;
+                }
+            }
 
-            return ps.executeUpdate() > 0;
+            cs.setString(1, d.getRuc());
+            cs.setString(2, d.getNombre());
+            cs.setString(3, d.getNumeroTelefono());
+            cs.setString(4, d.getCalleDireccion());
+            cs.setString(5, d.getCodigoUbigeo());
+            cs.setString(6, d.getGmail());
+
+            int updated = cs.executeUpdate();
+            return updated >= 0;
 
         } catch (SQLException e) {
-            System.out.println("Error al actualizar destinatario: " + e.getMessage());
+            System.out.println("Error al actualizar destinatario (CALL): " + e.getMessage());
             return false;
         }
     }
 
+    // método público para que la UI pueda validar antes de intentar insertar
+    public boolean ubigeoExiste(String codigoUbigeo) {
+        if (codigoUbigeo == null || codigoUbigeo.trim().isEmpty()) return false;
+        try (Connection cn = Conexion.getConnection()) {
+            return ubigeoExiste(cn, codigoUbigeo);
+        } catch (SQLException e) {
+            System.out.println("Error comprobando ubigeo: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // método privado que reutiliza la conexión
+    private boolean ubigeoExiste(Connection cn, String codigoUbigeo) throws SQLException {
+        String sql = "SELECT 1 FROM ubigeo WHERE codigo_ubigeo = ?";
+        try (PreparedStatement ps = cn.prepareStatement(sql)) {
+            ps.setString(1, codigoUbigeo);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    // eliminar usando SP
     public boolean eliminar(String ruc) {
-        String sql = "DELETE FROM destinatario WHERE ruc = ?";
+        String call = "{ CALL sp_eliminar_destinatario(?) }";
 
         try (Connection cn = Conexion.getConnection();
-             PreparedStatement ps = cn.prepareStatement(sql)) {
+             CallableStatement cs = cn.prepareCall(call)) {
 
-            ps.setString(1, ruc);
-            return ps.executeUpdate() > 0;
+            cs.setString(1, ruc);
+            int updated = cs.executeUpdate();
+            return updated >= 0;
 
         } catch (SQLException e) {
-            System.out.println("Error al eliminar destinatario: " + e.getMessage());
+            System.out.println("Error al eliminar destinatario (CALL): " + e.getMessage());
             return false;
         }
     }

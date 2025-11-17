@@ -53,4 +53,47 @@ public class GuiaDAO {
             return false;
         }
     }
+
+    // Nuevo: emitir guía usando el PROCEDURE sp_emitir_guia
+    public boolean emitirGuia(String codigoGuia,
+                              String serie,
+                              String numero,
+                              String codOrden,
+                              String rucRemitente,
+                              String rucDestinatario,
+                              String dirPartida,
+                              String dirLlegada,
+                              String ubigeoOrigen,
+                              String ubigeoDestino,
+                              String motivo,
+                              String modalidad,
+                              double pesoTotal,
+                              int numeroBultos) {
+        String call = "{ CALL sp_emitir_guia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) }";
+        try (Connection cn = Conexion.getConnection();
+             CallableStatement cs = cn.prepareCall(call)) {
+
+            cs.setString(1, codigoGuia);
+            cs.setString(2, serie);
+            cs.setString(3, numero);
+            cs.setString(4, codOrden);
+            cs.setString(5, rucRemitente);
+            cs.setString(6, rucDestinatario);
+            cs.setString(7, dirPartida);
+            cs.setString(8, dirLlegada);
+            cs.setString(9, ubigeoOrigen);
+            cs.setString(10, ubigeoDestino);
+            cs.setString(11, motivo);
+            cs.setString(12, modalidad);
+            cs.setDouble(13, pesoTotal);
+            cs.setInt(14, numeroBultos);
+
+            int updated = cs.executeUpdate();
+            return updated >= 0;
+
+        } catch (SQLException e) {
+            System.out.println("Error al emitir guía (CALL): " + e.getMessage());
+            return false;
+        }
+    }
 }
