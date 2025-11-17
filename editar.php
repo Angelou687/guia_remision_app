@@ -1,91 +1,125 @@
 <?php
 require_once 'conexion.php';
-$pdo = obtenerConexion();
-$error = '';
 
 if (!isset($_GET['ruc'])) {
-    die("RUC no proporcionado");
+    header("Location: listar.php");
+    exit;
 }
 
 $ruc = $_GET['ruc'];
-
-// Obtener destinatario actual
-$stmt = $pdo->prepare("CALL sp_obtener_destinatario(:ruc)");
-$stmt->execute([':ruc' => $ruc]);
-$destinatario = $stmt->fetch(PDO::FETCH_ASSOC);
-$stmt->closeCursor();
-
-if (!$destinatario) {
-    die("Destinatario no encontrado");
-}
+$errores = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nombre    = $_POST['nombre'] ?? '';
-    $telefono  = $_POST['telefono'] ?? '';
-    $direccion = $_POST['direccion'] ?? '';
-    $ubigeo    = $_POST['ubigeo'] ?? '';
+    $telefono  = $_POST['numero_telefono'] ?? '';
+    $direccion = $_POST['calle_direccion'] ?? '';
+    $ubigeo    = $_POST['codigo_ubigeo'] ?? '';
     $gmail     = $_POST['gmail'] ?? '';
 
-    try {
-        $stmtUpd = $pdo->prepare("
-            CALL sp_actualizar_destinatario(
-                :ruc, :nombre, :tel, :dir, :ubi, :mail
-            )
-        ");
-        $stmtUpd->execute([
-            ':ruc'    => $ruc,
-            ':nombre' => $nombre,
-            ':tel'    => $telefono,
-            ':dir'    => $direccion,
-            ':ubi'    => $ubigeo,
-            ':mail'   => $gmail
-        ]);
-        $stmtUpd->closeCursor();
-        header('Location: listar.php');
-        exit;
-    } catch (PDOException $e) {
-        $error = "Error al actualizar: " . $e->getMessage();
+    if ($nombre === '') {
+        $errores[] = "El nombre es obligatorio.";
     }
+    if ($direccion === '') {
+        $errores[] = "La dirección es obligatoria.";
+    }
+    if ($ubigeo === '') {
+        $errores[] = "El código de ubigeo es obligatorio.";
+    }
+
+    if (empty($errores)) {
+        try {
+            $stmt = $pdo->prepare("CALL sp_actualizar_destinatario(?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$ruc, $nombre, $telefono, $direccion, $ubigeo, $gmail]);
+            header("Location: listar.php");
+            exit;
+        } catch (PDOException $e) {
+            $errores[] = "Error al actualizar: " . $e->getMessage();
+        }
+    }
+} else {
+    // Cargar datos actuales
+    $stmt = $pdo->prepare("
+        SELECT ruc, nombre, numero_telefono, calle_direccion, codigo_ubigeo, gmail
+        FROM destinatario
+        WHERE ruc = ?
+    ");
+    $stmt->execute([$ruc]);
+    $dest = $stmt->fetch();
+
+    if (!$dest) {
+        die("Destinatario no encontrado.");
+    }
+
+    $_POST = $dest; // para reutilizar en el formulario
 }
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Editar destinatario</title>
+    <title>Editar Destinatario</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#f4f6f9; margin:0; }
+        header { background:#2c3e50; color:#fff; padding:1rem 2rem; }
+        main {
+            max-width:700px;
+            margin:2rem auto;
+            background:#fff;
+            padding:2rem;
+            border-radius:8px;
+            box-shadow:0 2px 8px rgba(0,0,0,0.1);
+        }
+        label { display:block; margin-top:0.75rem; }
+        input[type="text"] {
+            width:100%;
+            padding:0.5rem;
+            margin-top:0.25rem;
+            box-sizing:border-box;
+        }
+        .btn { margin-top:1rem; padding:0.5rem 1rem; border:none; border-radius:4px; cursor:pointer; }
+        .btn-primary { background:#3498db; color:#fff; }
+        .btn-secondary { background:#7f8c8d; color:#fff; text-decoration:none; padding:0.5rem 1rem; }
+        .errores { background:#e74c3c; color:#fff; padding:0.5rem; margin-bottom:1rem; border-radius:4px; }
+    </style>
 </head>
 <body>
+<header>
     <h1>Editar destinatario</h1>
-    <p><a href="listar.php">← Volver a la lista</a></p>
+</header>
+<main>
+    <a href="listar.php" class="btn btn-secondary">← Volver</a>
 
-    <?php if (!empty($error)): ?>
-        <p style="color:red;"><?= htmlspecialchars($error) ?></p>
+    <?php if (!empty($errores)): ?>
+        <div class="errores">
+            <ul>
+            <?php foreach ($errores as $err): ?>
+                <li><?= htmlspecialchars($err) ?></li>
+            <?php endforeach; ?>
+            </ul>
+        </div>
     <?php endif; ?>
 
     <form method="post">
-        <p><strong>RUC: <?= htmlspecialchars($destinatario['ruc']) ?></strong></p>
+        <p><strong>RUC: </strong><?= htmlspecialchars($ruc) ?></p>
 
         <label>Nombre:
-            <input type="text" name="nombre" value="<?= htmlspecialchars($destinatario['nombre']) ?>" required>
-        </label><br><br>
-
+            <input type="text" name="nombre" value="<?= htmlspecialchars($_POST['nombre'] ?? '') ?>">
+        </label>
         <label>Teléfono:
-            <input type="text" name="telefono" value="<?= htmlspecialchars($destinatario['numero_telefono']) ?>">
-        </label><br><br>
-
+            <input type="text" name="numero_telefono" value="<?= htmlspecialchars($_POST['numero_telefono'] ?? '') ?>">
+        </label>
         <label>Dirección:
-            <input type="text" name="direccion" value="<?= htmlspecialchars($destinatario['calle_direccion']) ?>" required>
-        </label><br><br>
-
+            <input type="text" name="calle_direccion" value="<?= htmlspecialchars($_POST['calle_direccion'] ?? '') ?>">
+        </label>
         <label>Código Ubigeo:
-            <input type="text" name="ubigeo" value="<?= htmlspecialchars($destinatario['codigo_ubigeo']) ?>" maxlength="6" required>
-        </label><br><br>
+            <input type="text" name="codigo_ubigeo" maxlength="6" value="<?= htmlspecialchars($_POST['codigo_ubigeo'] ?? '') ?>">
+        </label>
+        <label>Correo:
+            <input type="text" name="gmail" value="<?= htmlspecialchars($_POST['gmail'] ?? '') ?>">
+        </label>
 
-        <label>Correo (gmail):
-            <input type="email" name="gmail" value="<?= htmlspecialchars($destinatario['gmail']) ?>">
-        </label><br><br>
-
-        <button type="submit">Actualizar</button>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button>
     </form>
+</main>
 </body>
 </html>

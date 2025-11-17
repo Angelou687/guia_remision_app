@@ -1,65 +1,79 @@
 <?php
 require_once 'conexion.php';
-$pdo = obtenerConexion();
 
-$reporte = $_GET['rep'] ?? null;
-$tituloReporte = '';
+$reporte = $_POST['reporte'] ?? '';
 $resultados = [];
+$columnas = [];
 
-function ejecutarSP($pdo, $sql, $params = [])
-{
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    $stmt->closeCursor();
-    return $rows;
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $reporte !== '') {
+    try {
+        switch ($reporte) {
+            case 'detalle_orden':
+                $codigo = $_POST['codigo_orden'] ?? 'ORD0001';
+                $stmt = $pdo->prepare("CALL sp_reporte_detalle_orden(?)");
+                $stmt->execute([$codigo]);
+                break;
 
-if ($reporte === '1') {
-    $tituloReporte = '1) Detalle de una orden con sus productos';
-    // Podrías pedir el código_orden vía formulario; aquí dejo uno de ejemplo:
-    $codigoOrden = 'ORD0001';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_detalle_orden(:cod)", [
-        ':cod' => $codigoOrden
-    ]);
-}
-elseif ($reporte === '2') {
-    $tituloReporte = '2) Guías emitidas por fecha y estado';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_guias_por_fecha_estado()");
-}
-elseif ($reporte === '3') {
-    $tituloReporte = '3) Productos más vendidos por cantidad';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_productos_mas_vendidos()");
-}
-elseif ($reporte === '4') {
-    $tituloReporte = '4) Utilización de vehículos (viajes por placa)';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_utilizacion_vehiculos()");
-}
-elseif ($reporte === '5') {
-    $tituloReporte = '5) Licencias por vencer en ≤ 180 días';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_licencias_por_vencer(:dias)", [
-        ':dias' => 180
-    ]);
-}
-elseif ($reporte === '6') {
-    $tituloReporte = '6) Guías sin traslado asignado';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_guias_sin_traslado()");
-}
-elseif ($reporte === '7') {
-    $tituloReporte = '7) Capacidad vs. carga por guía (alerta de sobrecarga)';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_capacidad_vs_carga()");
-}
-elseif ($reporte === '8') {
-    $tituloReporte = '8) Bultos entregados por cliente (últimos 90 días)';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_bultos_por_cliente_90d()");
-}
-elseif ($reporte === '9') {
-    $tituloReporte = '9) KPI diario de estado de guías';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_kpi_guias_diario()");
-}
-elseif ($reporte === '10') {
-    $tituloReporte = '10) Clientes sin compras en los últimos 60 días';
-    $resultados = ejecutarSP($pdo, "CALL sp_reporte_clientes_sin_compras_60d()");
+            case 'guias_fecha_estado':
+                $stmt = $pdo->prepare("CALL sp_reporte_guias_por_fecha_estado()");
+                $stmt->execute();
+                break;
+
+            case 'productos_mas_vendidos':
+                $stmt = $pdo->prepare("CALL sp_reporte_productos_mas_vendidos()");
+                $stmt->execute();
+                break;
+
+            case 'utilizacion_vehiculos':
+                $stmt = $pdo->prepare("CALL sp_reporte_utilizacion_vehiculos()");
+                $stmt->execute();
+                break;
+
+            case 'licencias_por_vencer':
+                $stmt = $pdo->prepare("CALL sp_reporte_licencias_por_vencer(?)");
+                $stmt->execute([180]);
+                break;
+
+            case 'guias_sin_traslado':
+                $stmt = $pdo->prepare("CALL sp_reporte_guias_sin_traslado()");
+                $stmt->execute();
+                break;
+
+            case 'top_clientes_guias':
+                $stmt = $pdo->prepare("CALL sp_reporte_top_clientes_por_guias()");
+                $stmt->execute();
+                break;
+
+            case 'bultos_90d':
+                $stmt = $pdo->prepare("CALL sp_reporte_bultos_por_cliente_90d()");
+                $stmt->execute();
+                break;
+
+            case 'kpi_guias':
+                $stmt = $pdo->prepare("CALL sp_reporte_kpi_guias_diario()");
+                $stmt->execute();
+                break;
+
+            case 'historial_traslados':
+                $stmt = $pdo->prepare("CALL sp_reporte_historial_estados_traslado()");
+                $stmt->execute();
+                break;
+
+            default:
+                $stmt = null;
+        }
+
+        if (isset($stmt)) {
+            $resultados = $stmt->fetchAll();
+            if (!empty($resultados)) {
+                $columnas = array_keys($resultados[0]);
+            }
+            // Consumir resultados restantes de procedimientos (por seguridad con MySQL)
+            while ($stmt->nextRowset()) { /* nothing */ }
+        }
+    } catch (PDOException $e) {
+        $error = "Error al ejecutar el reporte: " . $e->getMessage();
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -67,46 +81,85 @@ elseif ($reporte === '10') {
 <head>
     <meta charset="UTF-8">
     <title>Reportes</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#f4f6f9; margin:0; }
+        header { background:#2c3e50; color:#fff; padding:1rem 2rem; }
+        main {
+            max-width:1000px;
+            margin:2rem auto;
+            background:#fff;
+            padding:2rem;
+            border-radius:8px;
+            box-shadow:0 2px 8px rgba(0,0,0,0.1);
+        }
+        select, input[type="text"] { padding:0.4rem; margin-right:0.5rem; }
+        table { width:100%; border-collapse:collapse; margin-top:1rem; }
+        th, td { border:1px solid #ddd; padding:0.5rem; text-align:left; }
+        th { background:#ecf0f1; }
+        .btn { padding:0.4rem 0.8rem; border:none; border-radius:4px; background:#3498db; color:#fff; cursor:pointer; }
+        .btn-secondary { background:#7f8c8d; color:#fff; text-decoration:none; padding:0.4rem 0.8rem; border-radius:4px; }
+        .error { background:#e74c3c; color:#fff; padding:0.5rem; border-radius:4px; margin-top:1rem; }
+    </style>
 </head>
 <body>
-    <h1>Reportes sobre la base de datos guia_remision</h1>
-    <p><a href="index.php">← Volver al menú</a></p>
+<header>
+    <h1>Reportes de la base de datos</h1>
+</header>
+<main>
+    <a href="index.php" class="btn-secondary">← Volver al menú</a>
 
-    <h2>Seleccione un reporte</h2>
-    <ol>
-        <li><a href="reportes.php?rep=1">Detalle de una orden con sus productos</a></li>
-        <li><a href="reportes.php?rep=2">Guías emitidas por fecha y estado</a></li>
-        <li><a href="reportes.php?rep=3">Productos más vendidos por cantidad</a></li>
-        <li><a href="reportes.php?rep=4">Utilización de vehículos (viajes por placa)</a></li>
-        <li><a href="reportes.php?rep=5">Licencias por vencer en ≤ 180 días</a></li>
-        <li><a href="reportes.php?rep=6">Guías sin traslado asignado</a></li>
-        <li><a href="reportes.php?rep=7">Capacidad vs. carga por guía</a></li>
-        <li><a href="reportes.php?rep=8">Bultos entregados por cliente (últimos 90 días)</a></li>
-        <li><a href="reportes.php?rep=9">KPI diario de estado de guías</a></li>
-        <li><a href="reportes.php?rep=10">Clientes sin compras en los últimos 60 días</a></li>
-    </ol>
+    <h2>Seleccionar reporte</h2>
+    <form method="post">
+        <select name="reporte" required>
+            <option value="">-- Seleccione un reporte --</option>
+            <option value="detalle_orden"        <?= $reporte==='detalle_orden'?'selected':'' ?>>1) Detalle de una orden</option>
+            <option value="guias_fecha_estado"   <?= $reporte==='guias_fecha_estado'?'selected':'' ?>>2) Guías por fecha y estado</option>
+            <option value="productos_mas_vendidos" <?= $reporte==='productos_mas_vendidos'?'selected':'' ?>>3) Productos más vendidos</option>
+            <option value="utilizacion_vehiculos"  <?= $reporte==='utilizacion_vehiculos'?'selected':'' ?>>4) Utilización de vehículos</option>
+            <option value="licencias_por_vencer"   <?= $reporte==='licencias_por_vencer'?'selected':'' ?>>5) Licencias por vencer (180 días)</option>
+            <option value="guias_sin_traslado"     <?= $reporte==='guias_sin_traslado'?'selected':'' ?>>6) Guías sin traslado</option>
+            <option value="top_clientes_guias"     <?= $reporte==='top_clientes_guias'?'selected':'' ?>>7) Top clientes por guías</option>
+            <option value="bultos_90d"             <?= $reporte==='bultos_90d'?'selected':'' ?>>8) Bultos por cliente (90 días)</option>
+            <option value="kpi_guias"              <?= $reporte==='kpi_guias'?'selected':'' ?>>9) KPI diario de guías</option>
+            <option value="historial_traslados"    <?= $reporte==='historial_traslados'?'selected':'' ?>>10) Historial de estados de traslado</option>
+        </select>
 
-    <?php if ($reporte && $tituloReporte): ?>
-        <h2><?= htmlspecialchars($tituloReporte) ?></h2>
+        <!-- Campo extra solo para detalle de orden -->
+        <?php if ($reporte === 'detalle_orden'): ?>
+            Código de orden:
+            <input type="text" name="codigo_orden" value="<?= htmlspecialchars($_POST['codigo_orden'] ?? 'ORD0001') ?>">
+        <?php endif; ?>
 
-        <?php if (empty($resultados)): ?>
-            <p>No se encontraron registros para este reporte.</p>
-        <?php else: ?>
-            <table border="1" cellpadding="5" cellspacing="0">
+        <button type="submit" class="btn">Ejecutar</button>
+    </form>
+
+    <?php if (isset($error)): ?>
+        <div class="error"><?= htmlspecialchars($error) ?></div>
+    <?php endif; ?>
+
+    <?php if (!empty($resultados)): ?>
+        <h3>Resultado</h3>
+        <table>
+            <thead>
                 <tr>
-                    <?php foreach (array_keys($resultados[0]) as $col): ?>
+                    <?php foreach ($columnas as $col): ?>
                         <th><?= htmlspecialchars($col) ?></th>
                     <?php endforeach; ?>
                 </tr>
+            </thead>
+            <tbody>
                 <?php foreach ($resultados as $fila): ?>
                     <tr>
-                        <?php foreach ($fila as $valor): ?>
-                            <td><?= htmlspecialchars($valor) ?></td>
+                        <?php foreach ($columnas as $col): ?>
+                            <td><?= htmlspecialchars($fila[$col]) ?></td>
                         <?php endforeach; ?>
                     </tr>
                 <?php endforeach; ?>
-            </table>
-        <?php endif; ?>
+            </tbody>
+        </table>
+    <?php elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)): ?>
+        <p>No se encontraron resultados para este reporte.</p>
     <?php endif; ?>
+</main>
 </body>
 </html>
