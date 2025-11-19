@@ -541,6 +541,11 @@ public class MainApp extends JFrame {
     // MAIN
     // =========================
     public static void main(String[] args) {
+        // Print classpath and some env info to help debugging classpath/driver issues
+        System.out.println("java.class.path=" + System.getProperty("java.class.path"));
+        System.out.println("user.dir=" + System.getProperty("user.dir"));
+        System.out.println("java.home=" + System.getProperty("java.home"));
+
         SwingUtilities.invokeLater(() -> {
             // Launch new dashboard
             try {
