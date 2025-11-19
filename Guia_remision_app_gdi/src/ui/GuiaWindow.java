@@ -45,7 +45,15 @@ public class GuiaWindow extends JFrame {
             CabeceraGuia g = dao.listarTodas().stream().filter(x->x.getCodigoGuia().equals(codigo)).findFirst().orElse(null);
             if (g!=null) new FrmGuia(this, g).setVisible(true);
         });
-        btnEliminar.addActionListener(e -> JOptionPane.showMessageDialog(this, "Eliminar desde UI no implementado (use DB)"));
+        btnEliminar.addActionListener(e -> {
+            int r = table.getSelectedRow(); if (r < 0) { JOptionPane.showMessageDialog(this, "Seleccione una fila"); return; }
+            String codigo = model.getValueAt(r,0).toString();
+            int opt = JOptionPane.showConfirmDialog(this, "Confirma eliminar la guía " + codigo + " ?", "Confirmar", JOptionPane.YES_NO_OPTION);
+            if (opt != JOptionPane.YES_OPTION) return;
+            boolean ok = dao.eliminar(codigo);
+            if (ok) { JOptionPane.showMessageDialog(this, "Eliminado"); load(); }
+            else { JOptionPane.showMessageDialog(this, "Error al eliminar. Verifique dependencias y logs."); }
+        });
 
         load();
     }

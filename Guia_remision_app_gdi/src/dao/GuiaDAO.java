@@ -96,4 +96,20 @@ public class GuiaDAO {
             return false;
         }
     }
+
+    // eliminar guía por codigo
+    public boolean eliminar(String codigoGuia) {
+        String sql = "DELETE FROM cabecera_guia WHERE codigo_guia = ?";
+
+        try (Connection cn = Conexion.getConnection();
+             PreparedStatement ps = cn.prepareStatement(sql)) {
+
+            ps.setString(1, codigoGuia);
+            return ps.executeUpdate() > 0;
+
+        } catch (SQLException e) {
+            System.out.println("Error al eliminar guía: " + e.getMessage());
+            return false;
+        }
+    }
 }
