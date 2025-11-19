@@ -542,8 +542,24 @@ public class MainApp extends JFrame {
     // =========================
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
-            MainApp app = new MainApp();
-            app.setVisible(true);
+            // Launch new dashboard
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+                // Force a consistent UI font that includes Spanish glyphs
+                Font uiFont = new Font("Segoe UI", Font.PLAIN, 12);
+                java.util.Enumeration<Object> keys = UIManager.getDefaults().keys();
+                while (keys.hasMoreElements()) {
+                    Object key = keys.nextElement();
+                    Object val = UIManager.get(key);
+                    if (val instanceof javax.swing.plaf.FontUIResource) {
+                        UIManager.put(key, new javax.swing.plaf.FontUIResource(uiFont));
+                    }
+                }
+                // Apply theme defaults for contrast/colors
+                ui.UIStyles.applyThemeDefaults();
+            } catch (Exception ignore) {}
+            ui.FrmMenu menu = new ui.FrmMenu();
+            menu.setVisible(true);
         });
     }
 
