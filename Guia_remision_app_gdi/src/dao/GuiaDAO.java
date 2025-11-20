@@ -2,6 +2,7 @@ package dao;
 
 import db.Conexion;
 import model.CabeceraGuia;
+import model.DetalleGuia;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -111,5 +112,42 @@ public class GuiaDAO {
             System.out.println("Error al eliminar guía: " + e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Recupera los detalles (líneas) asociados a una guía.
+     * Ajusta los nombres de columnas según tu esquema si difieren.
+     */
+    public List<DetalleGuia> listarDetallePorGuia(String codigoGuia) {
+        List<DetalleGuia> lista = new ArrayList<>();
+        String sql = "SELECT nro_item, bien_normalizado, codigo_bien, codigo_producto_sunat, partida_arancelaria, " +
+                     "codigo_gtin, descripcion, unidad_medida, cantidad " +
+                     "FROM detalle_guia WHERE codigo_guia = ? ORDER BY nro_item";
+
+        try (Connection cn = Conexion.getConnection();
+             PreparedStatement ps = cn.prepareStatement(sql)) {
+
+            ps.setString(1, codigoGuia);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int nro = rs.getInt("nro_item");
+                    String bien = rs.getString("bien_normalizado");
+                    String codBien = rs.getString("codigo_bien");
+                    String codProd = rs.getString("codigo_producto_sunat");
+                    String partida = rs.getString("partida_arancelaria");
+                    String gtin = rs.getString("codigo_gtin");
+                    String desc = rs.getString("descripcion");
+                    String unidad = rs.getString("unidad_medida");
+                    String cantidad = rs.getString("cantidad");
+                    DetalleGuia d = new DetalleGuia(nro, bien, codBien, codProd, partida, gtin, desc, unidad, cantidad);
+                    lista.add(d);
+                }
+            }
+
+        } catch (SQLException e) {
+            System.out.println("Error al listar detalle de guía: " + e.getMessage());
+        }
+
+        return lista;
     }
 }
