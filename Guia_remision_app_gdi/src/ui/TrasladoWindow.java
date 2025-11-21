@@ -7,6 +7,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.List;
+import java.time.format.DateTimeFormatter;
 
 public class TrasladoWindow extends JFrame {
     private TrasladoDAO dao = new TrasladoDAO();
@@ -42,6 +43,13 @@ public class TrasladoWindow extends JFrame {
     public void load() {
         model.setRowCount(0);
         List<Traslado> lista = dao.listarTodos();
-        for (Traslado t: lista) model.addRow(new Object[]{t.getCodigoTraslado(), t.getCodigoGuia(), t.getPlaca(), t.getLicencia(), t.getFechaInicio(), t.getFechaFin(), t.getEstadoTraslado(), t.getObservaciones()});
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        for (Traslado t: lista) {
+            String inicio = "";
+            String fin = "";
+            if (t.getFechaInicio() != null) inicio = t.getFechaInicio().toLocalDateTime().toLocalDate().format(fmt);
+            if (t.getFechaFin() != null) fin = t.getFechaFin().toLocalDateTime().toLocalDate().format(fmt);
+            model.addRow(new Object[]{t.getCodigoTraslado(), t.getCodigoGuia(), t.getPlaca(), t.getLicencia(), inicio, fin, t.getEstadoTraslado(), t.getObservaciones()});
+        }
     }
 }

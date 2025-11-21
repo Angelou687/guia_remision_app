@@ -10,6 +10,11 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+// Añadidos para manejo de fecha/hora
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 
 public class GuiaWindow extends JFrame {
     private GuiaDAO dao = new GuiaDAO();
@@ -67,6 +72,42 @@ public class GuiaWindow extends JFrame {
             CabeceraGuia g = dao.listarTodas().stream().filter(x->x.getCodigoGuia().equals(codigo)).findFirst().orElse(null);
             if (g == null) { JOptionPane.showMessageDialog(this, "No se pudo cargar la guía seleccionada"); return; }
 
+            // Pedir al usuario la fecha de emisión en formato dd/MM/yyyy (entrada manual)
+            String fechaPrefill = "";
+            if (g.getFechaEmision() != null) {
+                // formatear fecha existente a dd/MM/yyyy
+                java.sql.Date d = g.getFechaEmision();
+                java.time.LocalDate ld = d.toLocalDate();
+                fechaPrefill = ld.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            }
+            String fechaInput = (String) JOptionPane.showInputDialog(
+                    this,
+                    "Ingrese Fecha de emisión (dd/MM/yyyy):",
+                    "Fecha de emisión",
+                    JOptionPane.PLAIN_MESSAGE,
+                    null,
+                    null,
+                    fechaPrefill
+            );
+            if (fechaInput == null) return; // cancelado
+
+            // Validar formato dd/MM/yyyy
+            LocalDate fechaEmitida;
+            try {
+                DateTimeFormatter f = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                fechaEmitida = LocalDate.parse(fechaInput.trim(), f);
+            } catch (DateTimeParseException ex) {
+                JOptionPane.showMessageDialog(this, "Formato de fecha inválido. Use dd/MM/yyyy");
+                return;
+            }
+
+            // Obtener hora actual en formato hh:mm:ss AM/PM
+            LocalTime ahora = LocalTime.now();
+            String horaActual = ahora.format(DateTimeFormatter.ofPattern("hh:mm:ss a"));
+
+            // Construir cadena final fecha y hora para el PDF: "dd/MM/yyyy hh:mm:ss AM/PM"
+            String fechaEmisionStr = fechaEmitida.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " " + horaActual;
+
             // Obtener detalles (líneas)
             List<DetalleGuia> detalles = dao.listarDetallePorGuia(codigo);
 
@@ -94,7 +135,6 @@ public class GuiaWindow extends JFrame {
             String rucRemitente = g.getRucRemitente();
             String serie = g.getSerie() == null ? "" : g.getSerie();
             String numero = g.getNumero() == null ? "" : g.getNumero();
-            String fechaEmision = g.getFechaEmision() == null ? "" : g.getFechaEmision().toString();
 
             // Pedir ruta de guardado
             JFileChooser fc = new JFileChooser();
@@ -104,7 +144,7 @@ public class GuiaWindow extends JFrame {
             String path = fc.getSelectedFile().getAbsolutePath();
 
             try {
-                // Llamada al generador: (muchos campos no están disponibles en CabeceraGuia; uso placeholders vacíos)
+                // Llamada al generador: pasamos fechaEmisionStr (fecha manual + hora actual)
                 util.GuiaRemisionGenerator.createPdf(
                         path,
                         empresaNombre,
@@ -112,7 +152,7 @@ public class GuiaWindow extends JFrame {
                         rucRemitente,
                         serie,
                         numero,
-                        fechaEmision,
+                        fechaEmisionStr,
                         "", // fechaInicioTraslado
                         "", // puntoPartida
                         "", // puntoLlegada
