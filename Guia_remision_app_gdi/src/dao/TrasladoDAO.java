@@ -10,8 +10,7 @@ import java.util.List;
 public class TrasladoDAO {
 
     public boolean registrarTraslado(Traslado t) {
-        // Llamar al procedimiento que inserta el traslado (disparará trg_traslado_ai)
-        String call = "{ CALL sp_registrar_traslado(?, ?, ?, ?, ?, ?, ?, ?) }";
+        String call = "CALL sp_registrar_traslado(?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection cn = Conexion.getConnection();
              CallableStatement cs = cn.prepareCall(call)) {
 
@@ -24,8 +23,8 @@ public class TrasladoDAO {
             cs.setString(7, t.getEstadoTraslado());
             cs.setString(8, t.getObservaciones());
 
-            int updated = cs.executeUpdate();
-            return updated >= 0;
+            cs.execute();
+            return true;
 
         } catch (SQLException e) {
             System.out.println("Error al registrar traslado (CALL): " + e.getMessage());
@@ -33,14 +32,14 @@ public class TrasladoDAO {
         }
     }
 
-    // listar usando SP sp_listar_traslados()
+    // listar usando función en Postgres que devuelve SETOF
     public List<Traslado> listarTodos() {
         List<Traslado> lista = new ArrayList<>();
-        String call = "{ CALL sp_listar_traslados() }";
+        String sql = "SELECT * FROM sp_listar_traslados()";
 
         try (Connection cn = Conexion.getConnection();
-             CallableStatement cs = cn.prepareCall(call);
-             ResultSet rs = cs.executeQuery()) {
+             PreparedStatement ps = cn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
                 Traslado t = new Traslado();
@@ -56,7 +55,7 @@ public class TrasladoDAO {
             }
 
         } catch (SQLException e) {
-            System.out.println("Error al listar traslados (CALL): " + e.getMessage());
+            System.out.println("Error al listar traslados: " + e.getMessage());
         }
 
         return lista;

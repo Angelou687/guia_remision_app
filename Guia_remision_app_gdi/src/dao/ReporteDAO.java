@@ -7,7 +7,6 @@ import java.sql.*;
 
 public class ReporteDAO {
 
-    // Ejecuta una consulta SELECT sin parámetros y devuelve un TableModel
     public DefaultTableModel ejecutarConsulta(String sql) {
         DefaultTableModel model = new DefaultTableModel();
 
@@ -18,12 +17,10 @@ public class ReporteDAO {
             ResultSetMetaData meta = rs.getMetaData();
             int columnas = meta.getColumnCount();
 
-            // Encabezados
             for (int i = 1; i <= columnas; i++) {
                 model.addColumn(meta.getColumnLabel(i));
             }
 
-            // Filas
             while (rs.next()) {
                 Object[] fila = new Object[columnas];
                 for (int i = 0; i < columnas; i++) {
@@ -39,7 +36,6 @@ public class ReporteDAO {
         return model;
     }
 
-    // Versión con un parámetro (por ejemplo, código de orden)
     public DefaultTableModel ejecutarConsultaConParametro(String sql, String param) {
         DefaultTableModel model = new DefaultTableModel();
 
@@ -72,14 +68,17 @@ public class ReporteDAO {
         return model;
     }
 
-    // Nuevo: ejecutar SP sin parámetros (ej: sp_listar_traslados, sp_reporte_guias_por_fecha_estado)
+    // Ejecuta una "función/procedimiento" que devuelve filas: usamos SELECT * FROM func()
     public DefaultTableModel ejecutarSP(String spName) {
         DefaultTableModel model = new DefaultTableModel();
-        String call = "{ CALL " + spName + " }"; // spName por ejemplo: sp_listar_traslados()
+        // spName puede venir con o sin paréntesis; normalizamos:
+        String sql;
+        if (spName.endsWith("()")) sql = "SELECT * FROM " + spName.substring(0, spName.length()-2) + "()";
+        else sql = "SELECT * FROM " + spName + "()";
 
         try (Connection cn = Conexion.getConnection();
-             CallableStatement cs = cn.prepareCall(call);
-             ResultSet rs = cs.executeQuery()) {
+             PreparedStatement ps = cn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
 
             ResultSetMetaData meta = rs.getMetaData();
             int columnas = meta.getColumnCount();
@@ -98,16 +97,16 @@ public class ReporteDAO {
         return model;
     }
 
-    // Nuevo: ejecutar SP con 1 parámetro (ej: sp_reporte_detalle_orden, sp_reporte_licencias_por_vencer)
+    // Ejecuta función/procedimiento con 1 parámetro que devuelve filas
     public DefaultTableModel ejecutarSPConParametro(String spName, String param) {
         DefaultTableModel model = new DefaultTableModel();
-        String call = "{ CALL " + spName + "(?) }"; // spName por ejemplo: sp_reporte_detalle_orden
+        String sql = "SELECT * FROM " + spName + "(?)";
 
         try (Connection cn = Conexion.getConnection();
-             CallableStatement cs = cn.prepareCall(call)) {
+             PreparedStatement ps = cn.prepareStatement(sql)) {
 
-            cs.setString(1, param);
-            try (ResultSet rs = cs.executeQuery()) {
+            ps.setString(1, param);
+            try (ResultSet rs = ps.executeQuery()) {
                 ResultSetMetaData meta = rs.getMetaData();
                 int columnas = meta.getColumnCount();
                 for (int i = 1; i <= columnas; i++) model.addColumn(meta.getColumnLabel(i));

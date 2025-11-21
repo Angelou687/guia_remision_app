@@ -55,7 +55,6 @@ public class GuiaDAO {
         }
     }
 
-    // Nuevo: emitir guía usando el PROCEDURE sp_emitir_guia
     public boolean emitirGuia(String codigoGuia,
                               String serie,
                               String numero,
@@ -70,7 +69,7 @@ public class GuiaDAO {
                               String modalidad,
                               double pesoTotal,
                               int numeroBultos) {
-        String call = "{ CALL sp_emitir_guia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) }";
+        String call = "CALL sp_emitir_guia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection cn = Conexion.getConnection();
              CallableStatement cs = cn.prepareCall(call)) {
 
@@ -89,8 +88,8 @@ public class GuiaDAO {
             cs.setDouble(13, pesoTotal);
             cs.setInt(14, numeroBultos);
 
-            int updated = cs.executeUpdate();
-            return updated >= 0;
+            cs.execute();
+            return true;
 
         } catch (SQLException e) {
             System.out.println("Error al emitir guía (CALL): " + e.getMessage());
@@ -98,7 +97,6 @@ public class GuiaDAO {
         }
     }
 
-    // eliminar guía por codigo
     public boolean eliminar(String codigoGuia) {
         String sql = "DELETE FROM cabecera_guia WHERE codigo_guia = ?";
 
@@ -114,13 +112,9 @@ public class GuiaDAO {
         }
     }
 
-    /**
-     * Recupera los detalles (líneas) asociados a una guía.
-     * Ajusta los nombres de columnas según tu esquema si difieren.
-     */
     public List<DetalleGuia> listarDetallePorGuia(String codigoGuia) {
         List<DetalleGuia> lista = new ArrayList<>();
-        String sql = "SELECT nro_item, bien_normalizado, codigo_bien, codigo_producto_sunat, partida_arancelaria, " +
+        String sql = "SELECT nro_item AS nro_item, bien_normalizado, codigo_bien, codigo_producto_sunat, partida_arancelaria, " +
                      "codigo_gtin, descripcion, unidad_medida, cantidad " +
                      "FROM detalle_guia WHERE codigo_guia = ? ORDER BY nro_item";
 

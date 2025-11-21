@@ -6,15 +6,16 @@ import java.sql.SQLException;
 
 public class Conexion {
 
-    private static final String URL  = "jdbc:mysql://localhost:3306/guia_remision?useSSL=false&serverTimezone=America/Lima";
-    private static final String USER = "root";              // <-- CAMBIA ESTO
-    private static final String PASS = "angel";  // <-- CAMBIA ESTO
+    // Ajusta host/puerto/nombre_basedatos/usuario/clave según tu entorno PostgreSQL
+    private static final String URL  = "jdbc:postgresql://localhost:5432/guia_remision";
+    private static final String USER = "postgres";    // <-- CAMBIA ESTO
+    private static final String PASS = "root";    // <-- CAMBIA ESTO
 
     static {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver"); // Driver JDBC de MySQL
+            Class.forName("org.postgresql.Driver"); // Driver JDBC de PostgreSQL
         } catch (ClassNotFoundException e) {
-            System.out.println("No se pudo cargar el driver de MySQL: " + e.getMessage());
+            System.out.println("No se pudo cargar el driver de PostgreSQL: " + e.getMessage());
         }
     }
 
