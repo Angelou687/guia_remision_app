@@ -1,7 +1,6 @@
 package ui;
 
 import dao.GuiaDAO;
-import dao.DestinatarioDAO;
 import model.CabeceraGuia;
 import model.DetalleGuia;
 import util.GuiaRemisionGenerator;

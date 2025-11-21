@@ -5,9 +5,6 @@ import com.lowagie.text.pdf.*;
 import java.io.FileOutputStream;
 import java.util.List;
 
-// añadimos import opcional de java.awt.Color si prefieres no fully-qualify
-import java.awt.Color;
-
 /**
  * Generador de PDF para Guía de Remisión (diseño parecido a la imagen provista).
  * Usa OpenPDF (com.github.librepdf:openpdf) / API compatible com.lowagie.text.
