@@ -91,14 +91,16 @@ public class MainApp extends JFrame {
         JButton btnGuardar = new JButton("Guardar");
         JButton btnActualizar = new JButton("Actualizar");
         JButton btnEliminar = new JButton("Eliminar");
-        JButton btnLimpiar  = new JButton("Limpiar");
+        JButton btnRecuperar = new JButton("Recuperar");
+         JButton btnLimpiar  = new JButton("Limpiar");
 
         JPanel acciones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         acciones.add(btnNuevo);
         acciones.add(btnGuardar);
         acciones.add(btnActualizar);
         acciones.add(btnEliminar);
-        acciones.add(btnLimpiar);
+        acciones.add(btnRecuperar);
+         acciones.add(btnLimpiar);
 
         JPanel derecha = new JPanel(new BorderLayout(5,5));
         derecha.add(form, BorderLayout.CENTER);
@@ -204,6 +206,21 @@ public class MainApp extends JFrame {
                     limpiarDestinatarioForm(txtRuc, txtNombre, txtTel, txtDir, txtUbigeo, txtGmail);
                 } else {
                     JOptionPane.showMessageDialog(panel, "Error al eliminar destinatario");
+                }
+            }
+        });
+
+        // Recuperar botón: restaura un destinatario eliminado (soft-delete)
+        btnRecuperar.addActionListener(e -> {
+            String ruc = txtRuc.getText().trim();
+            if (ruc.isEmpty()) { JOptionPane.showMessageDialog(panel, "Ingrese/seleccione RUC para recuperar"); return; }
+            int resp = JOptionPane.showConfirmDialog(panel, "Recuperar RUC " + ruc + " ?", "Confirmar", JOptionPane.YES_NO_OPTION);
+            if (resp == JOptionPane.YES_OPTION) {
+                if (destinatarioDAO.recuperar(ruc)) {
+                    JOptionPane.showMessageDialog(panel, "Recuperado");
+                    cargarDestinatariosEnTabla(model);
+                } else {
+                    JOptionPane.showMessageDialog(panel, "Error al recuperar");
                 }
             }
         });

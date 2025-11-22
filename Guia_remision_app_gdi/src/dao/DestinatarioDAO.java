@@ -110,17 +110,27 @@ public class DestinatarioDAO {
     }
 
     public boolean eliminar(String ruc) {
-        String call = "CALL sp_eliminar_destinatario(?)";
-
+        // Soft-delete: marcar eliminado = true (requiere columna 'eliminado' en la tabla)
+        String sql = "UPDATE destinatario SET eliminado = true WHERE ruc = ?";
         try (Connection cn = Conexion.getConnection();
-             CallableStatement cs = cn.prepareCall(call)) {
-
-            cs.setString(1, ruc);
-            cs.execute();
-            return true;
-
+             PreparedStatement ps = cn.prepareStatement(sql)) {
+            ps.setString(1, ruc);
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            System.out.println("Error al eliminar destinatario (CALL): " + e.getMessage());
+            System.out.println("Error al eliminar destinatario (soft): " + e.getMessage());
+            return false;
+        }
+    }
+
+    // Recuperar destinatario eliminado
+    public boolean recuperar(String ruc) {
+        String sql = "UPDATE destinatario SET eliminado = false WHERE ruc = ?";
+        try (Connection cn = Conexion.getConnection();
+             PreparedStatement ps = cn.prepareStatement(sql)) {
+            ps.setString(1, ruc);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Error al recuperar destinatario: " + e.getMessage());
             return false;
         }
     }

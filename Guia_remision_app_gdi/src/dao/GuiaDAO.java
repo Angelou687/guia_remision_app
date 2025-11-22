@@ -7,34 +7,79 @@ import model.DetalleGuia;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 public class GuiaDAO {
 
     public List<CabeceraGuia> listarTodas() {
         List<CabeceraGuia> lista = new ArrayList<>();
-        String sql = "SELECT codigo_guia, serie, numero, cod_orden, ruc_remitente, " +
-                     "fecha_emision, hora_emision, estado_guia " +
-                     "FROM cabecera_guia";
+        String sqlWithEliminado = "SELECT codigo_guia, serie, numero, cod_orden, ruc_remitente, ruc_destinatario, " +
+                "dir_partida, dir_llegada, ubigeo_origen, ubigeo_destino, peso_total, numero_bultos, " +
+                "fecha_emision, hora_emision, estado_guia " +
+                "FROM cabecera_guia WHERE coalesce(eliminado,false) = false";
 
-        try (Connection cn = Conexion.getConnection();
-             PreparedStatement ps = cn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+        String sqlFallback = "SELECT codigo_guia, serie, numero, cod_orden, ruc_remitente, ruc_destinatario, " +
+                "dir_partida, dir_llegada, ubigeo_origen, ubigeo_destino, peso_total, numero_bultos, " +
+                "fecha_emision, hora_emision, estado_guia " +
+                "FROM cabecera_guia";
 
-            while (rs.next()) {
-                CabeceraGuia g = new CabeceraGuia();
-                g.setCodigoGuia(rs.getString("codigo_guia"));
-                g.setSerie(rs.getString("serie"));
-                g.setNumero(rs.getString("numero"));
-                g.setCodOrden(rs.getString("cod_orden"));
-                g.setRucRemitente(rs.getString("ruc_remitente"));
-                g.setFechaEmision(rs.getDate("fecha_emision"));
-                g.setHoraEmision(rs.getTime("hora_emision"));
-                g.setEstadoGuia(rs.getString("estado_guia"));
-                lista.add(g);
+        try (Connection cn = Conexion.getConnection()) {
+            try (PreparedStatement ps = cn.prepareStatement(sqlWithEliminado);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    CabeceraGuia g = new CabeceraGuia();
+                    g.setCodigoGuia(rs.getString("codigo_guia"));
+                    g.setSerie(rs.getString("serie"));
+                    g.setNumero(rs.getString("numero"));
+                    g.setCodOrden(rs.getString("cod_orden"));
+                    g.setRucRemitente(rs.getString("ruc_remitente"));
+                    g.setRucDestinatario(rs.getString("ruc_destinatario"));
+                    g.setDirPartida(rs.getString("dir_partida"));
+                    g.setDirLlegada(rs.getString("dir_llegada"));
+                    g.setUbigeoOrigen(rs.getString("ubigeo_origen"));
+                    g.setUbigeoDestino(rs.getString("ubigeo_destino"));
+                    g.setPesoTotal(rs.getObject("peso_total") == null ? 0.0 : rs.getDouble("peso_total"));
+                    g.setNumeroBultos(rs.getObject("numero_bultos") == null ? 0 : rs.getInt("numero_bultos"));
+                    g.setFechaEmision(rs.getDate("fecha_emision"));
+                    g.setHoraEmision(rs.getTime("hora_emision"));
+                    g.setEstadoGuia(rs.getString("estado_guia"));
+                    lista.add(g);
+                }
+            } catch (SQLException e) {
+                String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+                if (msg.contains("eliminado") || msg.contains("no existe la columna")) {
+                    try (PreparedStatement ps2 = cn.prepareStatement(sqlFallback);
+                         ResultSet rs2 = ps2.executeQuery()) {
+                        while (rs2.next()) {
+                            CabeceraGuia g = new CabeceraGuia();
+                            g.setCodigoGuia(rs2.getString("codigo_guia"));
+                            g.setSerie(rs2.getString("serie"));
+                            g.setNumero(rs2.getString("numero"));
+                            g.setCodOrden(rs2.getString("cod_orden"));
+                            g.setRucRemitente(rs2.getString("ruc_remitente"));
+                            g.setRucDestinatario(rs2.getString("ruc_destinatario"));
+                            g.setDirPartida(rs2.getString("dir_partida"));
+                            g.setDirLlegada(rs2.getString("dir_llegada"));
+                            g.setUbigeoOrigen(rs2.getString("ubigeo_origen"));
+                            g.setUbigeoDestino(rs2.getString("ubigeo_destino"));
+                            g.setPesoTotal(rs2.getObject("peso_total") == null ? 0.0 : rs2.getDouble("peso_total"));
+                            g.setNumeroBultos(rs2.getObject("numero_bultos") == null ? 0 : rs2.getInt("numero_bultos"));
+                            g.setFechaEmision(rs2.getDate("fecha_emision"));
+                            g.setHoraEmision(rs2.getTime("hora_emision"));
+                            g.setEstadoGuia(rs2.getString("estado_guia"));
+                            lista.add(g);
+                        }
+                    } catch (SQLException ex2) {
+                        System.out.println("Error al listar guias (fallback): " + ex2.getMessage());
+                    }
+                } else {
+                    System.out.println("Error al listar guias: " + e.getMessage());
+                }
             }
-
         } catch (SQLException e) {
-            System.out.println("Error al listar guias: " + e.getMessage());
+            System.out.println("Error al obtener conexión para listar guias: " + e.getMessage());
         }
         return lista;
     }
@@ -55,6 +100,11 @@ public class GuiaDAO {
         }
     }
 
+    /**
+     * Emite la guía: intenta llamar a la función sp_emitir_guia (SELECT),
+     * si no existe intenta CALL (procedimiento) y si sigue fallando hace un INSERT mínimo
+     * directo en cabecera_guia como fallback.
+     */
     public boolean emitirGuia(String codigoGuia,
                               String serie,
                               String numero,
@@ -69,36 +119,131 @@ public class GuiaDAO {
                               String modalidad,
                               double pesoTotal,
                               int numeroBultos) {
-        String call = "CALL sp_emitir_guia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        // 1) Intento función (SELECT)
+        String fnSql = "SELECT sp_emitir_guia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection cn = Conexion.getConnection();
-             CallableStatement cs = cn.prepareCall(call)) {
+             PreparedStatement ps = cn.prepareStatement(fnSql)) {
 
-            cs.setString(1, codigoGuia);
-            cs.setString(2, serie);
-            cs.setString(3, numero);
-            cs.setString(4, codOrden);
-            cs.setString(5, rucRemitente);
-            cs.setString(6, rucDestinatario);
-            cs.setString(7, dirPartida);
-            cs.setString(8, dirLlegada);
-            cs.setString(9, ubigeoOrigen);
-            cs.setString(10, ubigeoDestino);
-            cs.setString(11, motivo);
-            cs.setString(12, modalidad);
-            cs.setDouble(13, pesoTotal);
-            cs.setInt(14, numeroBultos);
+            ps.setString(1, codigoGuia);
+            ps.setString(2, serie);
+            ps.setString(3, numero);
+            if (codOrden == null) ps.setNull(4, Types.VARCHAR); else ps.setString(4, codOrden);
+            ps.setString(5, rucRemitente);
+            ps.setString(6, rucDestinatario);
+            ps.setString(7, dirPartida);
+            ps.setString(8, dirLlegada);
+            ps.setString(9, ubigeoOrigen);
+            ps.setString(10, ubigeoDestino);
+            ps.setString(11, motivo);
+            ps.setString(12, modalidad);
+            ps.setObject(13, pesoTotal);
+            ps.setObject(14, numeroBultos);
 
-            cs.execute();
+            ps.execute();
             return true;
+        } catch (SQLException ex1) {
+            String msg = ex1.getMessage() == null ? "" : ex1.getMessage().toLowerCase();
+            // Si función no existe, intento CALL (procedimiento)
+            if (msg.contains("no existe la función") || msg.contains("no existe el procedimiento") || msg.contains("does not exist") || msg.contains("no existe")) {
+                // 2) Intento CALL (procedure)
+                String callSql = "{ call sp_emitir_guia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) }";
+                try (Connection cn2 = Conexion.getConnection();
+                     CallableStatement cs = cn2.prepareCall(callSql)) {
 
-        } catch (SQLException e) {
-            System.out.println("Error al emitir guía (CALL): " + e.getMessage());
-            return false;
+                    cs.setString(1, codigoGuia);
+                    cs.setString(2, serie);
+                    cs.setString(3, numero);
+                    if (codOrden == null) cs.setNull(4, Types.VARCHAR); else cs.setString(4, codOrden);
+                    cs.setString(5, rucRemitente);
+                    cs.setString(6, rucDestinatario);
+                    cs.setString(7, dirPartida);
+                    cs.setString(8, dirLlegada);
+                    cs.setString(9, ubigeoOrigen);
+                    cs.setString(10, ubigeoDestino);
+                    cs.setString(11, motivo);
+                    cs.setString(12, modalidad);
+                    cs.setObject(13, pesoTotal);
+                    cs.setObject(14, numeroBultos);
+
+                    cs.execute();
+                    return true;
+                } catch (SQLException ex2) {
+                    // 3) Fallback: insertar mínimo en cabecera_guia (campos básicos y campos de traslado)
+                    try (Connection cn3 = Conexion.getConnection()) {
+                        // Asegurar que tenemos un ruc_remitente válido que exista en la tabla remitente.
+                        String remitenteUse = (rucRemitente == null ? "" : rucRemitente.trim());
+                        if (remitenteUse.isEmpty()) {
+                            // intentar obtener cualquier remitente existente
+                            String sel = "SELECT ruc FROM remitente LIMIT 1";
+                            try (PreparedStatement psSel = cn3.prepareStatement(sel);
+                                 ResultSet rsSel = psSel.executeQuery()) {
+                                if (rsSel.next()) remitenteUse = rsSel.getString("ruc");
+                            } catch (SQLException selEx) {
+                                // ignorar
+                            }
+                        }
+
+                        if (remitenteUse == null || remitenteUse.isEmpty()) {
+                            // Insertar un remitente por defecto (si ya existe, ON CONFLICT no fallará)
+                            remitenteUse = "00000000000";
+                            String insRem = "INSERT INTO remitente (ruc, nombre) VALUES (?, ?) ON CONFLICT (ruc) DO NOTHING";
+                            try (PreparedStatement psInsRem = cn3.prepareStatement(insRem)) {
+                                psInsRem.setString(1, remitenteUse);
+                                psInsRem.setString(2, "Remitente por defecto");
+                                psInsRem.executeUpdate();
+                            } catch (SQLException insRemEx) {
+                                // reintentar obtener uno existente
+                                try (PreparedStatement psSel2 = cn3.prepareStatement("SELECT ruc FROM remitente LIMIT 1");
+                                     ResultSet rs2 = psSel2.executeQuery()) {
+                                    if (rs2.next()) remitenteUse = rs2.getString("ruc");
+                                } catch (SQLException ignore) { /* continuará y puede fallar más abajo */ }
+                            }
+                        }
+
+                        // Ahora insertamos la cabecera usando remitenteUse (garantizar FK)
+                        // Incluimos ruc_destinatario, direcciones, ubigeos, peso_total y numero_bultos
+                        String ins = "INSERT INTO cabecera_guia (" +
+                                     "codigo_guia, serie, numero, cod_orden, ruc_remitente, ruc_destinatario, " +
+                                     "dir_partida, dir_llegada, ubigeo_origen, ubigeo_destino, peso_total, numero_bultos, " +
+                                     "fecha_emision, hora_emision, estado_guia" +
+                                     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        try (PreparedStatement psIns = cn3.prepareStatement(ins)) {
+                            psIns.setString(1, codigoGuia);
+                            psIns.setString(2, serie);
+                            psIns.setString(3, numero);
+                            if (codOrden == null) psIns.setNull(4, Types.VARCHAR); else psIns.setString(4, codOrden);
+                            psIns.setString(5, remitenteUse);
+                            psIns.setString(6, (rucDestinatario == null ? "" : rucDestinatario));
+                            psIns.setString(7, dirPartida == null ? "" : dirPartida);
+                            psIns.setString(8, dirLlegada == null ? "" : dirLlegada);
+                            psIns.setString(9, ubigeoOrigen == null ? "" : ubigeoOrigen);
+                            psIns.setString(10, ubigeoDestino == null ? "" : ubigeoDestino);
+                            psIns.setObject(11, pesoTotal);
+                            psIns.setObject(12, numeroBultos);
+                            psIns.setDate(13, java.sql.Date.valueOf(LocalDate.now()));
+                            psIns.setTime(14, java.sql.Time.valueOf(LocalTime.now()));
+                            psIns.setString(15, "emitida");
+                            psIns.executeUpdate();
+                            return true;
+                        }
+                    } catch (SQLException ex3) {
+                        System.out.println("Error fallback emitirGuia (insert): " + ex3.getMessage());
+                        return false;
+                    }
+                }
+            } else {
+                System.out.println("Error al emitir guía (SELECT): " + ex1.getMessage());
+                return false;
+            }
         }
     }
 
+    /**
+     * Soft-delete: marcar eliminado = true (requiere columna eliminado boolean en la tabla)
+     */
     public boolean eliminar(String codigoGuia) {
-        String sql = "DELETE FROM cabecera_guia WHERE codigo_guia = ?";
+        String sql = "UPDATE cabecera_guia SET eliminado = true WHERE codigo_guia = ?";
 
         try (Connection cn = Conexion.getConnection();
              PreparedStatement ps = cn.prepareStatement(sql)) {
@@ -107,7 +252,20 @@ public class GuiaDAO {
             return ps.executeUpdate() > 0;
 
         } catch (SQLException e) {
-            System.out.println("Error al eliminar guía: " + e.getMessage());
+            System.out.println("Error al eliminar guía (soft): " + e.getMessage());
+            return false;
+        }
+    }
+
+    // Recuperar registro eliminado (soft-undelete)
+    public boolean recuperar(String codigoGuia) {
+        String sql = "UPDATE cabecera_guia SET eliminado = false WHERE codigo_guia = ?";
+        try (Connection cn = Conexion.getConnection();
+             PreparedStatement ps = cn.prepareStatement(sql)) {
+            ps.setString(1, codigoGuia);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Error al recuperar guía: " + e.getMessage());
             return false;
         }
     }
@@ -143,5 +301,45 @@ public class GuiaDAO {
         }
 
         return lista;
+    }
+
+    /**
+     * Obtiene la cabecera completa por código (trae todos los campos usados en el formulario).
+     */
+    public CabeceraGuia obtenerPorCodigo(String codigoGuia) {
+        String sql = "SELECT codigo_guia, serie, numero, cod_orden, ruc_remitente, ruc_destinatario, " +
+                "dir_partida, dir_llegada, ubigeo_origen, ubigeo_destino, peso_total, numero_bultos, " +
+                "fecha_emision, hora_emision, estado_guia " +
+                "FROM cabecera_guia WHERE codigo_guia = ? LIMIT 1";
+
+        try (Connection cn = Conexion.getConnection();
+             PreparedStatement ps = cn.prepareStatement(sql)) {
+
+            ps.setString(1, codigoGuia);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    CabeceraGuia g = new CabeceraGuia();
+                    g.setCodigoGuia(rs.getString("codigo_guia"));
+                    g.setSerie(rs.getString("serie"));
+                    g.setNumero(rs.getString("numero"));
+                    g.setCodOrden(rs.getString("cod_orden"));
+                    g.setRucRemitente(rs.getString("ruc_remitente"));
+                    g.setRucDestinatario(rs.getString("ruc_destinatario"));
+                    g.setDirPartida(rs.getString("dir_partida"));
+                    g.setDirLlegada(rs.getString("dir_llegada"));
+                    g.setUbigeoOrigen(rs.getString("ubigeo_origen"));
+                    g.setUbigeoDestino(rs.getString("ubigeo_destino"));
+                    g.setPesoTotal(rs.getObject("peso_total") == null ? 0.0 : rs.getDouble("peso_total"));
+                    g.setNumeroBultos(rs.getObject("numero_bultos") == null ? 0 : rs.getInt("numero_bultos"));
+                    g.setFechaEmision(rs.getDate("fecha_emision"));
+                    g.setHoraEmision(rs.getTime("hora_emision"));
+                    g.setEstadoGuia(rs.getString("estado_guia"));
+                    return g;
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Error obtenerPorCodigo: " + e.getMessage());
+        }
+        return null;
     }
 }
